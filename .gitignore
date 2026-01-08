@@ -1,0 +1,8 @@
+malloc
+env.sh
+test/
+*.o
+lib/
+lib64/
+*.a
+*.so
