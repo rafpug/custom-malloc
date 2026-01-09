@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <pp.h>
 
 #define BLOCK_SIZE 64000
@@ -16,32 +17,61 @@ typedef struct Header {
 
 Header *head = NULL;
 
-int init_head(){
-	if (!head){
-		void *old_break = sbrk(BLOCKSIZE);
-		if (old_break == (void *) -1) {
-			return 1;
-		}
-		uintptr_t old_int = (uintptr) oldbreak;
-		if (old_int % ALIGNMENT != 0){
-			old_int += ALIGNMENT - (old_int % ALIGNMENT);
-		}
-		head = (Header *) old_int;
-		head->block_size = BLOCK_SIZE;
-		head->free = 1;
-		head->next = NULL;
-	}
-	return 0;
+size_t alignment_up(size_t req_size){
+        if (req_size % ALIGNMENT == 0){
+                return req_size;
+        }
+        else {
+                return req_size += ALIGNMENT - (req_size % ALIGNMENT);
+        }
 }
 
-size_t alignment_up(size_t req_size){
-	if (req_size % ALIGNMENT == 0){
-		return req_size;
-	} 
+Header *get_tail(){
+	Header *cur_header = head;
+	while(cur_header){
+		if (!cur_header->next){
+			return cur_header;
+		}
+	}
+	return NULL; 
+}
+
+int add_block(){
+	void *old_break = sbrk(BLOCKSIZE);
+        if (old_break == (void *) -1) {
+                return 1;
+        }
+	uintptr_t old_int = (uintptr) oldbreak;
+        if (old_int % ALIGNMENT != 0){
+               	old_int += ALIGNMENT - (old_int % ALIGNMENT);
+        }
+
+
+	Header *tail = get_tail();
+	if(tail){
+		if (tail->free){
+			tail->block_size += BLOCKSIZE;
+		} else {
+			Header *new_header = (Header *) old_int;
+		
+			tail->next = (Header *) old_int;
+			new_header->next = NULL;
+			
+			new_header->block_size = BLOCKSIZE 
+				- alignment_up(sizeof(Header));
+			
+			new_header->free = 1;
+		
+	}
 	else {
-		return req_size += ALIGNMENT - (req_size % ALIGNMENT);
+		head = (Header *) old_int;
+                head->block_size = BLOCK_SIZE;
+                head->free = 1;
+                head->next = NULL;
+	
 	}
 }
+
 
 Header *scan_headers_size(size_t target_size){
 	Header *cur_header = head
@@ -68,25 +98,37 @@ void *malloc(size_t size){
 	size_t target_size = alignment_up(size) 
 		+ alignment_up(sizeof(Header)) * HEADER_PADDING;
 
-	Header *cur_header = NULL;
-	if ((cur_header = scan_headers_size(target_size))){
-		Header *new_header = cur_header + target_size;
+	Header *cur_header = scan_headers_size(target_size);
+	while (!cur_header){
+		if(add_block()){
+			return NULL;
+		}
+		cur_header = scan_headers_size(target_size);
+	}
 
-		new_header->next = cur_header->next;
-		cur_header->next = new_header;
+	Header *new_header = cur_header + target_size;
 
-		new_header->block_size = cur_header->block_size - target_size;
-		cur_header->block_size = alignment_up(size);
+	new_header->next = cur_header->next;
+	cur_header->next = new_header;
+
+	new_header->block_size = cur_header->block_size - target_size;
+	cur_header->block_size = alignment_up(size);
 		
-		new_header->free = 1;
-		cur_header->free = 0;
+	new_header->free = 1;
+	cur_header->free = 0;
+	
+	void *finalptr = cur_header + alignment_up(sizeof(Header));
 		
-		return cur_header;
-	}		
+	if(getenv("DEBUG_MALLOC")){
+                pp(stderr, "MALLOC: malloc(%d)    => (ptr=%p, size=%d)\n", size, finalptr, cur_header->block_size);
+        }
+
+	return finalptr;		
 }
 
 void *calloc(size_t count, size_t size){
-	return malloc(count*size);	
+	void *finalptr = malloc(count*size);
+		
 }
 
 void *realloc(void *ptr, size_t size){
