@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 #include <pp.h>
 
 #define BLOCK_SIZE 64000
@@ -101,6 +102,7 @@ void *malloc(size_t size){
 	Header *cur_header = scan_headers_size(target_size);
 	while (!cur_header){
 		if(add_block()){
+			errno = ENOMEM;
 			return NULL;
 		}
 		cur_header = scan_headers_size(target_size);
@@ -128,7 +130,11 @@ void *malloc(size_t size){
 
 void *calloc(size_t count, size_t size){
 	void *finalptr = malloc(count*size);
-		
+	if (finalptr){ 
+		memset(finalptr, 0, size*count);
+		return finalptr;
+	}
+	return NULL;	
 }
 
 void *realloc(void *ptr, size_t size){
@@ -139,6 +145,8 @@ void *realloc(void *ptr, size_t size){
 		free(ptr)
 		return NULL
 	}
+	
+	
 }
 
 void free(void *ptr){
