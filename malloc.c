@@ -8,8 +8,7 @@
 
 #define BLOCK_SIZE 64000
 #define ALIGNMENT 16
-#define HEADER_PADDING 1 // The number of headers worth of space a block needs
-			// to be considered splitted during malloc
+
 typedef struct Header {
 	size_t block_size;
 	int free;
@@ -38,11 +37,11 @@ Header *get_tail(){
 }
 
 int add_block(){
-	void *old_break = sbrk(BLOCKSIZE);
+	void *old_break = sbrk(BLOCK_SIZE);
         if (old_break == (void *) -1) {
                 return 1;
         }
-	uintptr_t old_int = (uintptr) oldbreak;
+	uintptr_t old_int = (uintptr_t) oldbreak;
         if (old_int % ALIGNMENT != 0){
                	old_int += ALIGNMENT - (old_int % ALIGNMENT);
         }
@@ -51,14 +50,14 @@ int add_block(){
 	Header *tail = get_tail();
 	if(tail){
 		if (tail->free){
-			tail->block_size += BLOCKSIZE;
+			tail->block_size += BLOCK_SIZE;
 		} else {
 			Header *new_header = (Header *) old_int;
 		
 			tail->next = (Header *) old_int;
 			new_header->next = NULL;
 			
-			new_header->block_size = BLOCKSIZE 
+			new_header->block_size = BLOCK_SIZE 
 				- alignment_up(sizeof(Header));
 			
 			new_header->free = 1;
@@ -112,11 +111,36 @@ Header *scan_headers_address(void *init_ptr){
 	return NULL;	
 }
 
-Header *split_block(Header *init_block, size_t size){
-	if (init_block && init_block->block_size
-	> alignment_up(size) + alignment_up(sizeof(Header)){
-		
+Header *split_block(Header *cur_header, size_t size){
+	size_t target_size = alignment_up(sizeof(Header)) + alignment_up(size);
+
+	if (cur_header && cur_header->block_size > target_size){
+		Header *new_header = cur_header + target_size; 
+
+        	new_header->next = cur_header->next;
+        	cur_header->next = new_header;
+
+        	new_header->block_size = cur_header->block_size - target_size;
+        	cur_header->block_size = alignment_up(size);
+
+        	new_header->free = 0;
+	
+		free(new_header);
+		return new_header;
 	}
+	return NULL;
+}
+
+Header *merge_next_block(Header *header1){
+	Header *header2 = header1->next;
+	if(header1 && header2 && header2->free){
+		header1->next = header2->next;
+		header1->block_size += header2->block_size 
+			+ alignment_up(sizeof(Header));
+		return header1;
+	}
+	return NULL;
+}
 	
 
 void *malloc(size_t size){
@@ -124,7 +148,7 @@ void *malloc(size_t size){
 		return NULL;
 	}
 	size_t target_size = alignment_up(size) 
-		+ alignment_up(sizeof(Header)) * HEADER_PADDING;
+		+ alignment_up(sizeof(Header));
 
 	Header *cur_header = scan_headers_size(target_size);
 	while (!cur_header){
@@ -135,18 +159,9 @@ void *malloc(size_t size){
 		cur_header = scan_headers_size(target_size);
 	}
 
-	Header *new_header = cur_header + target_size;
-
-	new_header->next = cur_header->next;
-	cur_header->next = new_header;
-
-	new_header->block_size = cur_header->block_size - target_size;
-	cur_header->block_size = alignment_up(size);
-		
-	new_header->free = 0;
-	cur_header->free = 0;
-	
-	free(new_header);
+	if(!split_block(cur_header, size)){
+		return NULL;
+	}
 	
 	void *finalptr = cur_header + alignment_up(sizeof(Header));
 		
@@ -185,29 +200,125 @@ void *realloc(void *ptr, size_t size){
 	}
 	
 	Header *original_header = scan_headers_address(ptr);
+
+	void *old_ptr = ptr; // Stored for debugging 
+
 	if(original_header){
-		if (original_header->block_size > size 
-		+ alignment_up(sizeof(Header))){
-			
-		} 
-			
-		if(original_header->next && original_header->next->free){
-			size_t merged_size = original_header->block_size
-				+ original_header->next->block_size;
-			
-			if(merged_size >= alignment_up(size)){
+		// Case: block containing ptr was found
+		if(!split_block(original_header,size) 
+		&& original_header->block_size < alignment_up(size)){
+			// Case: block needs to be expanded
+			if(original_header->next){
+				// Case: block is not the tail
 				
+				while(original_header->block_size
+				< alignment_up(size)
+				&& merge_next_block()){
+					if(!merge_next_block){
+						break;
+					}
+				}
+				
+				if (original_header->block_size
+				< alignment_up(size)){
+					// Case: not enough space to realloc
+					// Malloc+memcpy instead of expanding
+					void *finalptr = malloc(size);
+					if (!finalptr){
+						return NULL;
+					}
+					memcpy(finalptr, original_header 
+						+ alignment_up(sizeof(Header))
+						, alignemnt_up(size));
+
+					ptr = finalptr;
+				} else {
+					// Case: Successfully expanded block
+					// Splits the block if it has excess
+					split_block(original_header, size);
+					ptr = original_header 
+						+ alignment_up(sizeof(Header));
+				} 
 			}
-			
-		
-	
-	
+			else{
+				// Case: block is the tail of our linkedlist
+				// Adds blocks to our list for more space
+				original_header->free = 1;
+
+				/* 
+ 				 add_block() automatically expands the tail
+ 				 if its free 		 
+ 				*/ 				
+				while(original_header->block_size 
+				< alignment_up(size)){
+					if(!add_block()){
+						errno = ENOMEM;
+						return NULL;
+					}
+				}
+				original_header->free = 0;
+				split_block(original_header);
+				ptr = original_header 
+					+ alignment_up(sizeof(Header));
+			}	
+		} 
+		else {
+			/*
+  			Case: block successfully shrank to desired size
+				or was already the desired size
+			*/
+			ptr = original_header + alignment_up(sizeof(Header));
+		}
+	}
+	else {
+		/*
+ 		 Case: block did not exist
+
+		 Instead malloc() will be called
+ 		*/ 
+		ptr = malloc(size);
+		if (!ptr) {
+			return NULL;
+		}
+	}
+
+	if (getenv("DEBGUG_MALLOC")){
+        	Header *final_header = scan_headers_address(ptr);
+                pp(stderr, "MALLOC: realloc(%p,%d) => (ptr=%p, size=%d)"	
+			, old_ptr, size, ptr, final_header->block_size
+                        + alignment_up(sizeof(Header)));
+        }
+	return ptr;			
 }
 
 void free(void *ptr){
 	if (!ptr){
 		return;
 	}
+	Header *target_header = scan_headers_address(ptr);
+	if (target_header) {
+		target_header->free = 1;
+		merge_next_block(target_header);
+
+		Header *prev_header = scan_headers_address(target_header-1);
+		if (prev_header && prev_header->free){
+			target_header = merge_next_block(prev_header);
+		}
+
+		Header *tail = get_tail();
+		if (target_header == tail){
+			prev_header = scan_headers_address(target_header-1);
+			if (prev_header){
+				prev_header->next = NULL
+			}
+			size_t total_size = -1 * (target_header->block_size
+				+ alignment_up(sizeof(Header)));
+			if( sbrk(-1 * total_size) == (void *) -1){
+				pp(stderr, "Failed to shrink heap");
+			}
+		}
+	}
+	return;
 }
 
 
