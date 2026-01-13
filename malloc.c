@@ -82,7 +82,7 @@ Header *scan_headers_size(size_t target_size){
 	Header *cur_header = head;
 	while(cur_header){
 		if (cur_header->block_size 
-		&& cur_header->block_size > target_size
+		&& cur_header->block_size >= target_size
 		&& cur_header->free){
 			return cur_header;
 		} 
@@ -116,25 +116,6 @@ Header *scan_headers_address(void *init_ptr){
 	return NULL;	
 }
 
-Header *split_block(Header *cur_header, size_t size){
-	size_t target_size = HEADER_SIZE + alignment_up(size);
-	if (cur_header && cur_header->block_size > target_size){
-		uintptr_t new_ptr = (uintptr_t) cur_header + target_size;
-		Header *new_header = (Header *)new_ptr;
-        	new_header->next = cur_header->next;
-        	cur_header->next = new_header;
-
-        	new_header->block_size = cur_header->block_size - target_size;
-        	cur_header->block_size = alignment_up(size);
-
-       		new_header->free = 0;
-	
-		free(new_header);
-		return new_header;
-	}
-	return NULL;
-}
-
 Header *merge_next_block(Header *header1){
 	pp(stderr, "merge_next_block(%p)\n", (void *)header1);
 	Header *header2 = header1->next;
@@ -146,6 +127,25 @@ Header *merge_next_block(Header *header1){
 		return header1;
 	}
 	return NULL;
+}
+
+Header *split_block(Header *cur_header, size_t size){
+        size_t target_size = HEADER_SIZE + alignment_up(size);
+        if (cur_header && cur_header->block_size >= target_size){
+                uintptr_t new_ptr = (uintptr_t) cur_header + target_size;
+                Header *new_header = (Header *)new_ptr;
+                new_header->next = cur_header->next;
+                cur_header->next = new_header;
+
+                new_header->block_size = cur_header->block_size - target_size;
+                cur_header->block_size = alignment_up(size);
+
+                new_header->free = 1;
+
+                merge_next_block(new_header);
+                return new_header;
+        }
+        return NULL;
 }
 	
 
@@ -199,6 +199,7 @@ void *calloc(size_t count, size_t size){
 void *realloc(void *ptr, size_t size){
 	pp(stderr, "called my realloc\n");
 	if (!ptr && size) {
+		pp(stderr, "NOpointer\nNopointer\n");
 		return malloc(size);
 	} 
 	else if (ptr && size == 0) {
@@ -289,7 +290,7 @@ void *realloc(void *ptr, size_t size){
 		}
 	}
 
-	if (getenv("DEBGUG_MALLOC")){
+	if (getenv("DEBUG_MALLOC")){
         	Header *final_header = scan_headers_address(ptr);
                 pp(stderr, "MALLOC: realloc(%p,%d) => (ptr=%p, size=%d)\n"	
 			, old_ptr, size, ptr, final_header->block_size);
@@ -316,6 +317,9 @@ void free(void *ptr){
 			prev_header = scan_headers_address(target_header-1);
 			if (prev_header){
 				prev_header->next = NULL;
+			}
+			else if (target_header == head){
+				head = NULL;
 			}
 			size_t total_size = target_header->block_size
 				+ HEADER_SIZE;
