@@ -29,9 +29,11 @@ size_t alignment_up(size_t req_size){
 Header *get_tail(){
 	Header *cur_header = head;
 	while(cur_header){
+		pp(stderr, "header: %p", (void *)cur_header);
 		if (!cur_header->next){
 			return cur_header;
 		}
+		cur_header = cur_header->next;
 	}
 	return NULL; 
 }
@@ -41,7 +43,7 @@ int add_block(){
         if (old_break == (void *) -1) {
                 return 1;
         }
-	uintptr_t old_int = (uintptr_t) oldbreak;
+	uintptr_t old_int = (uintptr_t) old_break;
         if (old_int % ALIGNMENT != 0){
                	old_int += ALIGNMENT - (old_int % ALIGNMENT);
         }
@@ -51,7 +53,8 @@ int add_block(){
 	if(tail){
 		if (tail->free){
 			tail->block_size += BLOCK_SIZE;
-		} else {
+		} 
+		else {
 			Header *new_header = (Header *) old_int;
 		
 			tail->next = (Header *) old_int;
@@ -61,7 +64,7 @@ int add_block(){
 				- alignment_up(sizeof(Header));
 			
 			new_header->free = 1;
-		
+		}
 	}
 	else {
 		head = (Header *) old_int;
@@ -70,6 +73,7 @@ int add_block(){
                 head->next = NULL;
 	
 	}
+	return 0;
 }
 
 
@@ -96,8 +100,8 @@ Header *scan_headers_address(void *init_ptr){
 	Header *cur_header = head;
 
 	while(cur_header){
-		if (cur_header <= init_ptr
-		&& init_ptr < cur_header + cur_header->block_size 
+		if ((void *) cur_header <= init_ptr
+		&& (uintptr_t) init_ptr < (uintptr_t) cur_header + cur_header->block_size 
 		+ alignment_up(sizeof(Header))){
 			return cur_header;
 		}
@@ -112,18 +116,20 @@ Header *scan_headers_address(void *init_ptr){
 }
 
 Header *split_block(Header *cur_header, size_t size){
+	pp(stderr, "split_block(%p, %ld)\n", (void *)cur_header, (long)size);
 	size_t target_size = alignment_up(sizeof(Header)) + alignment_up(size);
-
+	pp(stderr, "target_size = %ld\n", (long) target_size);
 	if (cur_header && cur_header->block_size > target_size){
-		Header *new_header = cur_header + target_size; 
-
+		uintptr_t new_ptr = (uintptr_t) cur_header + target_size;
+		Header *new_header = (Header *)new_ptr;
+		pp(stderr, "%p + %ld = %p\n", (void *)cur_header, (long)target_size, (void *) new_header );
         	new_header->next = cur_header->next;
         	cur_header->next = new_header;
 
         	new_header->block_size = cur_header->block_size - target_size;
         	cur_header->block_size = alignment_up(size);
 
-        	new_header->free = 0;
+       		new_header->free = 0;
 	
 		free(new_header);
 		return new_header;
@@ -144,7 +150,8 @@ Header *merge_next_block(Header *header1){
 	
 
 void *malloc(size_t size){
-	if (init_head) {
+	pp(stderr, "called my malloc\n");
+	if (!size){
 		return NULL;
 	}
 	size_t target_size = alignment_up(size) 
@@ -167,30 +174,32 @@ void *malloc(size_t size){
 		
 	if(getenv("DEBUG_MALLOC")){
                 pp(stderr, "MALLOC: malloc(%d)    => (ptr=%p, size=%d)\n", 
-			size, finalptr, cur_header->block_size);
+			size, finalptr, cur_header->block_size
+			+ alignment_up(sizeof(Header)));
         }
 
 	return finalptr;		
 }
 
 void *calloc(size_t count, size_t size){
+	pp(stderr, "called my calloc\n");
 	void *finalptr = malloc(count*size);
 	if (finalptr){ 
 		memset(finalptr, 0, size*count);
 
 		if (getenv("DEBGUG_MALLOC")){
 			Header *final_header = scan_headers_address(finalptr);
-			pp(stderr, "MALLOC: calloc(%d,%d)   
-				=> (ptr=%p, size=%d)", count, size, finalptr, 
+			pp(stderr, "MALLOC: calloc(%d,%d)"   
+				"=> (ptr=%p, size=%d)\n", count, size, finalptr,
 				final_header->block_size 
-				+ alignment_up(sizeof(header)));
+				+ alignment_up(sizeof(Header)));
 		}
 		return finalptr;
 	}
 	return NULL;	
 }
-
 void *realloc(void *ptr, size_t size){
+	pp(stderr, "called my calloc\n");
 	if (!ptr && size) {
 		return malloc(size);
 	} 
@@ -212,9 +221,8 @@ void *realloc(void *ptr, size_t size){
 				// Case: block is not the tail
 				
 				while(original_header->block_size
-				< alignment_up(size)
-				&& merge_next_block()){
-					if(!merge_next_block){
+				< alignment_up(size)){
+					if(!merge_next_block(original_header)){
 						break;
 					}
 				}
@@ -229,7 +237,7 @@ void *realloc(void *ptr, size_t size){
 					}
 					memcpy(finalptr, original_header 
 						+ alignment_up(sizeof(Header))
-						, alignemnt_up(size));
+						, alignment_up(size));
 
 					ptr = finalptr;
 				} else {
@@ -257,7 +265,7 @@ void *realloc(void *ptr, size_t size){
 					}
 				}
 				original_header->free = 0;
-				split_block(original_header);
+				split_block(original_header, size);
 				ptr = original_header 
 					+ alignment_up(sizeof(Header));
 			}	
@@ -284,7 +292,7 @@ void *realloc(void *ptr, size_t size){
 
 	if (getenv("DEBGUG_MALLOC")){
         	Header *final_header = scan_headers_address(ptr);
-                pp(stderr, "MALLOC: realloc(%p,%d) => (ptr=%p, size=%d)"	
+                pp(stderr, "MALLOC: realloc(%p,%d) => (ptr=%p, size=%d)\n"	
 			, old_ptr, size, ptr, final_header->block_size
                         + alignment_up(sizeof(Header)));
         }
@@ -292,32 +300,43 @@ void *realloc(void *ptr, size_t size){
 }
 
 void free(void *ptr){
+	pp(stderr, "called my free\n");
 	if (!ptr){
 		return;
 	}
+	pp(stderr, "test1\n");
 	Header *target_header = scan_headers_address(ptr);
 	if (target_header) {
+		pp(stderr, "test2\n");
 		target_header->free = 1;
 		merge_next_block(target_header);
 
 		Header *prev_header = scan_headers_address(target_header-1);
 		if (prev_header && prev_header->free){
+			pp(stderr, "test3\n");
 			target_header = merge_next_block(prev_header);
 		}
+		pp(stderr, "test4\n");
 
 		Header *tail = get_tail();
 		if (target_header == tail){
+			pp(stderr, "test5\n");
 			prev_header = scan_headers_address(target_header-1);
 			if (prev_header){
-				prev_header->next = NULL
+				pp(stderr, "test6\n");
+				prev_header->next = NULL;
 			}
 			size_t total_size = -1 * (target_header->block_size
 				+ alignment_up(sizeof(Header)));
 			if( sbrk(-1 * total_size) == (void *) -1){
-				pp(stderr, "Failed to shrink heap");
+				pp(stderr, "test7\n");
+				pp(stderr, "Failed to shrink heap\n");
 			}
+			pp(stderr, "test8\n");
 		}
+		pp(stderr, "test9\n");
 	}
+	pp(stderr, "MALLOC: free(%p)\n", ptr);
 	return;
 }
 
