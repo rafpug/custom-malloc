@@ -26,6 +26,8 @@ size_t alignment_up(size_t req_size){
         }
 }
 
+#define HEADER_SIZE alignment_up(sizeof(Header))
+
 Header *get_tail(){
 	Header *cur_header = head;
 	while(cur_header){
@@ -61,7 +63,7 @@ int add_block(){
 			new_header->next = NULL;
 			
 			new_header->block_size = BLOCK_SIZE 
-				- alignment_up(sizeof(Header));
+				- HEADER_SIZE;
 			
 			new_header->free = 1;
 		}
@@ -102,7 +104,7 @@ Header *scan_headers_address(void *init_ptr){
 	while(cur_header){
 		if ((void *) cur_header <= init_ptr
 		&& (uintptr_t) init_ptr < (uintptr_t) cur_header + cur_header->block_size 
-		+ alignment_up(sizeof(Header))){
+		+ HEADER_SIZE){
 			return cur_header;
 		}
 		else if (cur_header->next){
@@ -117,7 +119,7 @@ Header *scan_headers_address(void *init_ptr){
 
 Header *split_block(Header *cur_header, size_t size){
 	pp(stderr, "split_block(%p, %ld)\n", (void *)cur_header, (long)size);
-	size_t target_size = alignment_up(sizeof(Header)) + alignment_up(size);
+	size_t target_size = HEADER_SIZE + alignment_up(size);
 	pp(stderr, "target_size = %ld\n", (long) target_size);
 	if (cur_header && cur_header->block_size > target_size){
 		uintptr_t new_ptr = (uintptr_t) cur_header + target_size;
@@ -138,11 +140,12 @@ Header *split_block(Header *cur_header, size_t size){
 }
 
 Header *merge_next_block(Header *header1){
+	pp(stderr, "merge_next_block(%p)\n", (void *)header1);
 	Header *header2 = header1->next;
 	if(header1 && header2 && header2->free){
 		header1->next = header2->next;
 		header1->block_size += header2->block_size 
-			+ alignment_up(sizeof(Header));
+			+ HEADER_SIZE;
 		return header1;
 	}
 	return NULL;
@@ -155,7 +158,7 @@ void *malloc(size_t size){
 		return NULL;
 	}
 	size_t target_size = alignment_up(size) 
-		+ alignment_up(sizeof(Header));
+		+ HEADER_SIZE;
 
 	Header *cur_header = scan_headers_size(target_size);
 	while (!cur_header){
@@ -169,13 +172,13 @@ void *malloc(size_t size){
 	if(!split_block(cur_header, size)){
 		return NULL;
 	}
-	
-	void *finalptr = cur_header + alignment_up(sizeof(Header));
+	cur_header->free = 0;	
+	void *finalptr = cur_header + HEADER_SIZE;
 		
 	if(getenv("DEBUG_MALLOC")){
                 pp(stderr, "MALLOC: malloc(%d)    => (ptr=%p, size=%d)\n", 
 			size, finalptr, cur_header->block_size
-			+ alignment_up(sizeof(Header)));
+			+ HEADER_SIZE);
         }
 
 	return finalptr;		
@@ -192,7 +195,7 @@ void *calloc(size_t count, size_t size){
 			pp(stderr, "MALLOC: calloc(%d,%d)"   
 				"=> (ptr=%p, size=%d)\n", count, size, finalptr,
 				final_header->block_size 
-				+ alignment_up(sizeof(Header)));
+				+ HEADER_SIZE);
 		}
 		return finalptr;
 	}
@@ -236,7 +239,7 @@ void *realloc(void *ptr, size_t size){
 						return NULL;
 					}
 					memcpy(finalptr, original_header 
-						+ alignment_up(sizeof(Header))
+						+ HEADER_SIZE
 						, alignment_up(size));
 
 					ptr = finalptr;
@@ -245,7 +248,7 @@ void *realloc(void *ptr, size_t size){
 					// Splits the block if it has excess
 					split_block(original_header, size);
 					ptr = original_header 
-						+ alignment_up(sizeof(Header));
+						+ HEADER_SIZE;
 				} 
 			}
 			else{
@@ -267,7 +270,7 @@ void *realloc(void *ptr, size_t size){
 				original_header->free = 0;
 				split_block(original_header, size);
 				ptr = original_header 
-					+ alignment_up(sizeof(Header));
+					+ HEADER_SIZE;
 			}	
 		} 
 		else {
@@ -275,7 +278,7 @@ void *realloc(void *ptr, size_t size){
   			Case: block successfully shrank to desired size
 				or was already the desired size
 			*/
-			ptr = original_header + alignment_up(sizeof(Header));
+			ptr = original_header + HEADER_SIZE;
 		}
 	}
 	else {
@@ -294,7 +297,7 @@ void *realloc(void *ptr, size_t size){
         	Header *final_header = scan_headers_address(ptr);
                 pp(stderr, "MALLOC: realloc(%p,%d) => (ptr=%p, size=%d)\n"	
 			, old_ptr, size, ptr, final_header->block_size
-                        + alignment_up(sizeof(Header)));
+                        + HEADER_SIZE);
         }
 	return ptr;			
 }
@@ -327,7 +330,7 @@ void free(void *ptr){
 				prev_header->next = NULL;
 			}
 			size_t total_size = -1 * (target_header->block_size
-				+ alignment_up(sizeof(Header)));
+				+ HEADER_SIZE);
 			if( sbrk(-1 * total_size) == (void *) -1){
 				pp(stderr, "test7\n");
 				pp(stderr, "Failed to shrink heap\n");
@@ -343,7 +346,7 @@ void free(void *ptr){
 
 int test() {
 	if(getenv("DEBUG_MALLOC")){
-		pp(stderr, "Skeleton\n");
+		pp(stderr, "Skeleton%ld\n", HEADER_SIZE);
 	}
 	return 0;
 }
