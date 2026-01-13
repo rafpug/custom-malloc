@@ -142,6 +142,7 @@ Header *merge_next_block(Header *header1){
 		header1->next = header2->next;
 		header1->block_size += header2->block_size 
 			+ HEADER_SIZE;
+		pp(stderr, "successful merge!!\n");
 		return header1;
 	}
 	return NULL;
@@ -174,8 +175,7 @@ void *malloc(size_t size){
 		
 	if(getenv("DEBUG_MALLOC")){
                 pp(stderr, "MALLOC: malloc(%d)    => (ptr=%p, size=%d)\n", 
-			size, finalptr, cur_header->block_size
-			+ HEADER_SIZE);
+			size, finalptr, cur_header->block_size);
         }
 
 	return finalptr;		
@@ -190,8 +190,7 @@ void *calloc(size_t count, size_t size){
 			Header *final_header = scan_headers_address(finalptr);
 			pp(stderr, "MALLOC: calloc(%d,%d)"   
 				"=> (ptr=%p, size=%d)\n", count, size, finalptr,
-				final_header->block_size 
-				+ HEADER_SIZE);
+				final_header->block_size);
 		}
 		return finalptr;
 	}
@@ -293,8 +292,7 @@ void *realloc(void *ptr, size_t size){
 	if (getenv("DEBGUG_MALLOC")){
         	Header *final_header = scan_headers_address(ptr);
                 pp(stderr, "MALLOC: realloc(%p,%d) => (ptr=%p, size=%d)\n"	
-			, old_ptr, size, ptr, final_header->block_size
-                        + HEADER_SIZE);
+			, old_ptr, size, ptr, final_header->block_size);
         }
 	return ptr;			
 }
