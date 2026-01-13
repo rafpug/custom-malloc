@@ -204,6 +204,7 @@ void *realloc(void *ptr, size_t size){
 	} 
 	else if (ptr && size == 0) {
 		free(ptr);
+		pp(stderr, "size was zero\n");
 		return NULL;
 	}
 	
@@ -235,12 +236,13 @@ void *realloc(void *ptr, size_t size){
 					void *finalptr = malloc(size);
 					
 					if (!finalptr){
+						pp(stderr, "no final pointer\n");
 						return NULL;
 					}
 					memcpy(finalptr
 						, (void *) payload_intptr
 						, alignment_up(size));
-
+					original_header->free = 1;
 					ptr = finalptr;
 				} else {
 					// Case: Successfully expanded block
@@ -260,7 +262,8 @@ void *realloc(void *ptr, size_t size){
  				*/ 				
 				while(original_header->block_size 
 				< alignment_up(size)){
-					if(!add_block()){
+					if(add_block()){
+						pp(stderr, "failed to add block\n");
 						errno = ENOMEM;
 						return NULL;
 					}
@@ -286,6 +289,7 @@ void *realloc(void *ptr, size_t size){
  		*/ 
 		ptr = malloc(size);
 		if (!ptr) {
+			pp(stderr, "malloc failed\n");
 			return NULL;
 		}
 	}
