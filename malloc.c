@@ -285,13 +285,9 @@ void *realloc(void *ptr, size_t size){
 		/*
  		 Case: block did not exist
 
-		 Instead malloc() will be called
+		 Can't realloc so we return NULL
  		*/ 
-		ptr = malloc(size);
-		if (!ptr) {
-			pp(stderr, "malloc failed\n");
-			return NULL;
-		}
+		return NULL;
 	}
 
 	if (getenv("DEBUG_MALLOC")){
