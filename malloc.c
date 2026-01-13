@@ -70,7 +70,7 @@ int add_block(){
 	}
 	else {
 		head = (Header *) old_int;
-                head->block_size = BLOCK_SIZE;
+                head->block_size = BLOCK_SIZE - HEADER_SIZE;
                 head->free = 1;
                 head->next = NULL;
 	
@@ -168,12 +168,15 @@ void *malloc(size_t size){
 		}
 		cur_header = scan_headers_size(target_size);
 	}
-
+	
+	cur_header->free = 0;
+	pp(stderr, "blocksize: %ld\n", cur_header->block_size);
 	if(!split_block(cur_header, size)){
 		return NULL;
 	}
-	cur_header->free = 0;	
-	void *finalptr = cur_header + HEADER_SIZE;
+	pp(stderr, "blocksize: %ld\n", cur_header->block_size);	
+	uintptr_t finalintptr = (uintptr_t) cur_header + HEADER_SIZE;
+	void *finalptr = (void *) finalintptr;
 		
 	if(getenv("DEBUG_MALLOC")){
                 pp(stderr, "MALLOC: malloc(%d)    => (ptr=%p, size=%d)\n", 
