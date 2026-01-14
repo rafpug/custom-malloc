@@ -219,6 +219,7 @@ Header *split_block(Header *cur_header, size_t size){
  * Returns NULL upon failure
  */
 void *malloc(size_t size){
+	
 	if (size <= 0){
 		return NULL;
 	}
@@ -359,9 +360,9 @@ void *realloc(void *ptr, size_t size){
 					}
 					memcpy(finalptr
 						, (void *) payload_intptr
-						, alignment_up(size));
+						, original_header->block_size);
 
-					original_header->free = 1;
+					free(original_header);
 					ptr = finalptr;
 				} else {
 					// Case: Successfully expanded block
@@ -474,5 +475,6 @@ void free(void *ptr){
 	}
 	char buf[256];
 	snprintf(buf, sizeof(buf), "MALLOC: free(%p)\n", ptr);
+	fputs(buf, stderr);
 	return;
 }

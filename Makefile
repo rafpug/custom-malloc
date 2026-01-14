@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -shared -fPIC -Wall -Werror -pedantic -std=gnu99
-LFLAGS = -L /home/pn-cs453/Given/Asgn1/lib64 -lpp
-IFLAGS = -I /home/pn-cs453/Given/Asgn1/include
+LFLAGS = 
+IFLAGS = 
 
 
 malloc: libmalloc.a libmalloc.so
