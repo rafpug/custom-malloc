@@ -473,8 +473,11 @@ void free(void *ptr){
 			sbrk(-1 * total_size);
 		}
 	}
-	char buf[256];
-	snprintf(buf, sizeof(buf), "MALLOC: free(%p)\n", ptr);
-	fputs(buf, stderr);
+
+	if(getenv("DEBUG_MALLOC")){
+		char buf[256];
+		snprintf(buf, sizeof(buf), "MALLOC: free(%p)\n", ptr);
+		fputs(buf, stderr);
+	}
 	return;
 }
