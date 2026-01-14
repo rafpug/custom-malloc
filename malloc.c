@@ -40,20 +40,6 @@ size_t alignment_up(size_t req_size){
 
 #define HEADER_SIZE alignment_up(sizeof(Header))
 
-/* get_tail: Navigates through the linked list 
- * 	and returns the header at the tail end of the list
- */
-Header *get_tail(){
-	Header *cur_header = head;
-	while(cur_header){
-		if (!cur_header->next){
-			return cur_header;
-		}
-		cur_header = cur_header->next;
-	}
-	return NULL; 
-}
-
 /* add_block: Increases that heap size and merges 
  * 	it into our linked list
  *
@@ -480,7 +466,11 @@ void free(void *ptr){
 
 		// Attempts to shrink the heap if we are freeing the tail
 		// 	end of our list
-		if (!target_header->next){
+		// We avoid shrinking the heap unless the excess exceeds 
+		// 	our 64k block size. This prevents tanking performance
+		// 	when repeatedly allocating and freeing
+		if (!target_header->next
+			&& target_header->block_size > BLOCK_SIZE){
 			// Case: We are freeing the tail of our list
 			
 			// Marks the previous block, if any, as the tail
