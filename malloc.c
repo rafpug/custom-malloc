@@ -1,3 +1,19 @@
+/*
+ * SOURCE FILE HEADER: MALLOC
+ * 	This library is meant to replicate the malloc library
+ * 	included in the C standard library
+ *
+ * 	The purpose is to allocate memory in the heap for client 
+ * 	processes
+ *
+ * 	This is mainly achieved through the basics of using
+ * 	sbrk() to expand/shrink the heap and representing the
+ * 	allocations in the form of a doubly linked list
+ *
+ *
+ */
+
+
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +24,12 @@
 #define BLOCK_SIZE 64000
 #define ALIGNMENT 16
 
+#define BUF_DEBUG_SIZE 256
+
+#define FREE 1
+
+#define SBRK_FAILURE ((void *) -1)
+#define ADD_BLOCK_SUCCESS 0
 
 typedef struct Header {
 	// The block size excluding the header
@@ -48,9 +70,9 @@ static size_t alignment_up(size_t req_size) {
  */
 static int add_block() {
 	void *old_break = sbrk(BLOCK_SIZE);
-        if (old_break == (void *) -1) {
+        if (old_break == SBRK_FAILURE) {
 		// Failed to get memory from the OS
-                return 1;
+                return !ADD_BLOCK_SUCCESS;
         }
 
 	// Ensures that the pointer for our new block is 16 byte aligned
@@ -80,7 +102,7 @@ static int add_block() {
 			new_header->block_size = BLOCK_SIZE 
 				- HEADER_SIZE;
 			
-			new_header->free = 1;
+			new_header->free = FREE;
 
 			tail = new_header;
 		}
@@ -91,12 +113,12 @@ static int add_block() {
 		head = (Header *) old_int;
 		tail = (Header *) old_int;
                 head->block_size = BLOCK_SIZE - HEADER_SIZE;
-                head->free = 1;
+                head->free = FREE;
                 head->next = NULL;
 		head->prev = NULL;
 	
 	}
-	return 0;
+	return ADD_BLOCK_SUCCESS;
 }
 
 /* scan_headers_size: Scans through our linked list 
@@ -143,10 +165,12 @@ static Header *scan_headers_address(void *init_ptr) {
 	Header *cur_header = head;
 
 	while(cur_header) {
-		if ((void *) cur_header <= init_ptr
-		&& (uintptr_t) init_ptr < (uintptr_t) cur_header 
-		+ cur_header->block_size 
-		+ HEADER_SIZE) {
+		// Calculates the pointer to the end of the block
+		uintptr_t end = (uintptr_t) cur_header + HEADER_SIZE
+					+ cur_header->block_size;
+
+		if ((uintptr_t) cur_header <= (uintptr_t) init_ptr
+		&& (uintptr_t) init_ptr < end) {
 			return cur_header;
 		}
 		else if (cur_header->next) {
@@ -219,7 +243,7 @@ static Header *split_block(Header *cur_header, size_t size) {
                 new_header->block_size = cur_header->block_size - target_size;
                 cur_header->block_size = alignment_up(size);
 
-                new_header->free = 1;
+                new_header->free = FREE;
 
                 merge_next_block(new_header);
                 return new_header;
@@ -260,7 +284,7 @@ void *malloc(size_t size) {
 	// Malloc has found a suitable block
 	// 	so it marks it as allocated
 	// 	and splits it to desired size
-	cur_header->free = 0;
+	cur_header->free = !FREE;
 	split_block(cur_header, size);
 
 	
@@ -270,7 +294,7 @@ void *malloc(size_t size) {
 	void *finalptr = (void *) finalintptr;
 		
 	if(getenv("DEBUG_MALLOC")) {
-		char buf[256];
+		char buf[BUF_DEBUG_SIZE];
                 snprintf(buf, sizeof(buf), 
 			"MALLOC: malloc(%zu)    => (ptr=%p, size=%zu)\n", 
 			size, finalptr, cur_header->block_size);
@@ -302,7 +326,7 @@ void *calloc(size_t count, size_t size) {
 		if (getenv("DEBUG_MALLOC")) {
 			Header *final_header = scan_headers_address(finalptr);
 
-			char buf[256];
+			char buf[BUF_DEBUG_SIZE];
 			snprintf(buf, sizeof(buf), "MALLOC: calloc(%zu,%zu)"
 				"=> (ptr=%p, size=%zu)\n", 
 				count, size, finalptr,
@@ -327,7 +351,7 @@ void *realloc(void *ptr, size_t size) {
 	if (!ptr) {
 		return malloc(size);
 	} 
-	else if (ptr && size <= 0) {
+	else if (ptr && !size) {
 		free(ptr);
 		return NULL;
 	}
@@ -391,7 +415,7 @@ void *realloc(void *ptr, size_t size) {
 				// 	tail of our linked list
 
 				// To expand we just need to add more blocks
-				original_header->free = 1;
+				original_header->free = FREE;
 
 				/* 
  				 add_block() automatically expands the tail
@@ -405,7 +429,7 @@ void *realloc(void *ptr, size_t size) {
 					}
 				}
 
-				original_header->free = 0;
+				original_header->free = !FREE;
 				
 				// split off the excess
 				split_block(original_header, size);
@@ -432,7 +456,7 @@ void *realloc(void *ptr, size_t size) {
 	if (getenv("DEBUG_MALLOC")) {
         	Header *final_header = scan_headers_address(ptr);
 
-		char buf[256];
+		char buf[BUF_DEBUG_SIZE];
                 snprintf(buf, sizeof(buf), 
 			"MALLOC: realloc(%p,%zu) => (ptr=%p, size=%zu)\n",	
 			old_ptr, size, ptr, final_header->block_size);
@@ -455,7 +479,7 @@ void free(void *ptr) {
 	if (target_header) {
 		
 		// Marks the block as free
-		target_header->free = 1;
+		target_header->free = FREE;
 
 		// Merges the next block in the list if its free
 		merge_next_block(target_header);
@@ -494,7 +518,7 @@ void free(void *ptr) {
 	}
 
 	if(getenv("DEBUG_MALLOC")) {
-		char buf[256];
+		char buf[BUF_DEBUG_SIZE];
 		snprintf(buf, sizeof(buf), "MALLOC: free(%p)\n", ptr);
 		fputs(buf, stderr);
 	}
