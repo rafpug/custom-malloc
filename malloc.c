@@ -20,9 +20,11 @@ typedef struct Header {
 	
 	// A pointer to the next header in the list
 	struct Header *next;
+	struct Header *prev;
 } Header; 
 
 Header *head = NULL;
+Header *tail = NULL;
 
 /* alignment_up: Accepts a size and returns the 
  * 	size at the next 16 byte step 	
@@ -72,8 +74,7 @@ int add_block(){
         }
 
 	
- 	//Adds the memory based to our linked list based on the scenario
-	Header *tail = get_tail();
+ 	// Adds the memory based to our linked list based on the scenario
 	if(tail){
 		if (tail->free){
 			// Case: Our tail is free
@@ -88,19 +89,25 @@ int add_block(){
 			tail->next = (Header *) old_int;
 			new_header->next = NULL;
 			
+			new_header->prev = tail;
+			
 			new_header->block_size = BLOCK_SIZE 
 				- HEADER_SIZE;
 			
 			new_header->free = 1;
+
+			tail = new_header;
 		}
 	}
 	else {
 		// Case: we have no tail, thus no head
 		// We initialize the head
 		head = (Header *) old_int;
+		tail = (Header *) old_int;
                 head->block_size = BLOCK_SIZE - HEADER_SIZE;
                 head->free = 1;
                 head->next = NULL;
+		head->prev = NULL;
 	
 	}
 	return 0;
@@ -179,6 +186,13 @@ Header *merge_next_block(Header *header1){
 		header1->next = header2->next;
 		header1->block_size += header2->block_size 
 			+ HEADER_SIZE;
+		Header *header3 = header2->next;
+		if(header3){
+			header3->prev = header1;
+		}
+		else {
+			tail = header1;
+		}
 		return header1;
 	}
 	return NULL;
@@ -197,10 +211,22 @@ Header *merge_next_block(Header *header1){
 Header *split_block(Header *cur_header, size_t size){
         size_t target_size = HEADER_SIZE + alignment_up(size);
         if (cur_header && cur_header->block_size >= target_size){
+
                 uintptr_t new_ptr = (uintptr_t) cur_header + target_size;
                 Header *new_header = (Header *)new_ptr;
+
+		if (cur_header->next) {
+			cur_header->next->prev = new_header;
+		}
+		else {
+			tail = new_header;
+		}
+		
+
                 new_header->next = cur_header->next;
                 cur_header->next = new_header;
+
+		new_header->prev = cur_header;
 
                 new_header->block_size = cur_header->block_size - target_size;
                 cur_header->block_size = alignment_up(size);
@@ -247,9 +273,8 @@ void *malloc(size_t size){
 	// 	so it marks it as allocated
 	// 	and splits it to desired size
 	cur_header->free = 0;
-	if(!split_block(cur_header, size)){
-		return NULL;
-	}
+	split_block(cur_header, size);
+
 	
 	// Malloc finishes by calculating the pointer
 	// 	to the block's payload
@@ -331,7 +356,8 @@ void *realloc(void *ptr, size_t size){
 		
 		if(!split_block(original_header,size) 
 		&& original_header->block_size < alignment_up(size)){
-			// Case: splitting failed, so the
+			// Case: splitting failed because desired size
+			// 	exceeded the block_size so the
 			// 	block needs to be expanded
 			if(original_header->next){
 				// Case: block has a next block so 
@@ -447,25 +473,26 @@ void free(void *ptr){
 		merge_next_block(target_header);
 
 		// Finds the previous block and merges it if its free
-		Header *prev_header = scan_headers_address(target_header-1);
+		Header *prev_header = target_header->prev;
 		if (prev_header && prev_header->free){
 			target_header = merge_next_block(prev_header);
 		}
 
 		// Attempts to shrink the heap if we are freeing the tail
 		// 	end of our list
-		Header *tail = get_tail();
-		if (target_header == tail){
+		if (!target_header->next){
 			// Case: We are freeing the tail of our list
 			
 			// Marks the previous block, if any, as the tail
-			prev_header = scan_headers_address(target_header-1);
+			prev_header = target_header->prev;
 			if (prev_header){
+				tail = prev_header;
 				prev_header->next = NULL;
 			}
 			else if (target_header == head){
 				// Updates the head appropriately
 				head = NULL;
+				tail = NULL;
 			}
 			size_t total_size = target_header->block_size
 				+ HEADER_SIZE;
