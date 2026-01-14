@@ -1,1 +1,8 @@
 Written by Rafael Salcedo Prado (salcedop)
+
+run 'make malloc' to compile the 64 bit *.a 
+	and *.so files in the root directory
+
+run 'make intel-all' to compile the *.so files 
+	in their respective 32 bit and 64 bit 
+	lib directories
